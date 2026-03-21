@@ -3,12 +3,19 @@ import time
 from DrissionPage import ChromiumPage, ChromiumOptions
 
 def run_login():
-    # 配置浏览器：无头模式并在 Docker/Action 环境中运行的必要参数
     co = ChromiumOptions()
-    co.set_argument('--no-sandbox')
-    co.set_argument('--disable-gpu')
-    co.set_argument('--disable-dev-shm-usage')
-    co.set_headless(True)  # Actions 必须开启无头模式
+    
+    # 修正后的无头模式设置
+    co.headless(True) 
+    
+    # 针对 GitHub Actions 环境的必要参数
+    co.set_argument('--no-sandbox')            # 禁用沙箱
+    co.set_argument('--disable-gpu')           # 禁用 GPU 加速
+    co.set_argument('--disable-dev-shm-usage') # 防止内存溢出
+    co.set_argument('--start-maximized')       # 窗口最大化以确保元素可见
+    
+    # 设置一个真实的 User-Agent 减少被 Cloudflare 拦截的概率
+    co.set_user_agent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36')
     
     # 创建截图目录
     if not os.path.exists('screenshots'):
