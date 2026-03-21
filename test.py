@@ -1,74 +1,68 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 import os
 import time
-from DrissionPage import ChromiumPage, ChromiumOptions
+import subprocess
+from seleniumbase import SB
 
-def run_login():
-    co = ChromiumOptions()
-    
-    # 修正后的无头模式设置
-    co.headless(True) 
-    
-    # 针对 GitHub Actions 环境的必要参数
-    co.set_argument('--no-sandbox')            # 禁用沙箱
-    co.set_argument('--disable-gpu')           # 禁用 GPU 加速
-    co.set_argument('--disable-dev-shm-usage') # 防止内存溢出
-    co.set_argument('--start-maximized')       # 窗口最大化以确保元素可见
-    
-    # 设置一个真实的 User-Agent 减少被 Cloudflare 拦截的概率
-    co.set_user_agent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36')
-    
-    # 创建截图目录
-    if not os.path.exists('screenshots'):
-        os.makedirs('screenshots')
+# 配置与 JS 注入 (基于你的物理点击模板)
+_COORDS_JS = """(function(){var iframes=document.querySelectorAll('iframe');for(var i=0;i<iframes.length;i++){var src=iframes[i].src||'';if(src.includes('cloudflare')||src.includes('turnstile')){var r=iframes[i].getBoundingClientRect();if(r.width>0&&r.height>0)return {cx:Math.round(r.x+30),cy:Math.round(r.y+r.height/2)};}}return null;})()"""
+_WININFO_JS = """(function(){return {sx:window.screenX||0,sy:window.screenY||0,oh:window.outerHeight,ih:window.innerHeight};})()"""
 
-    page = ChromiumPage(co)
-    
-    try:
-        # 第一步：访问页面
-        print("Step 1: 正在访问登录页面...")
-        page.get('https://dash.icehost.pl/auth/login')
-        time.sleep(5) # 等待 Turnstile 加载
-        page.get_screenshot(path='screenshots/1_initial_load.png')
+def physical_click(x, y):
+    subprocess.run(["xdotool", "mousemove", "--sync", str(x), str(y)], check=True)
+    time.sleep(0.2)
+    subprocess.run(["xdotool", "click", "1"], check=True)
 
-        # 第二步：处理 Turnstile
-        # DrissionPage 默认会处理大多数隐形验证，如果页面有 iframe，我们尝试点击中心
-        print("Step 2: 检测验证码状态...")
-        if page.ele('tag:iframe'):
-            print("发现 Turnstile 验证框，尝试等待自动通过...")
-            # 这里的等待时间建议长一点，Cloudflare 在 Action IP 下验证较慢
-            time.sleep(10)
-            page.get_screenshot(path='screenshots/2_after_turnstile.png')
-
-        # 第三步：输入登录信息
-        print("Step 3: 尝试填写表单...")
-        email_input = page.wait.ele_displayed('@placeholder=name@skypass.tech', timeout=20)
+def run_task():
+    # uc=True 必须开启以规避检测
+    with SB(uc=True, test=True, headless=False) as sb:
+        url = "https://dash.icehost.pl"
         
-        if email_input:
-            email_input.input(os.environ['ICEHOST_EMAIL'])
-            page.ele('@type=password').input(os.environ['ICEHOST_PASSWORD'])
-            page.get_screenshot(path='screenshots/3_filled_form.png')
-            
-            # 点击登录
-            page.ele('text=Zaloguj się do panelu').click()
-            print("登录按钮已点击。")
-            
-            # 第四步：确认结果
-            time.sleep(8) # 等待跳转
-            page.get_screenshot(path='screenshots/4_final_result.png')
-            print(f"当前 URL: {page.url}")
-            
-            if "login" not in page.url:
-                print("登录成功！")
-            else:
-                print("登录失败，可能被 Cloudflare 拦截或账号错误。")
-        else:
-            print("无法定位登录框，验证码可能未通过。")
+        # 步骤 1: 访问首页
+        print(f"🚀 正在访问: {url}")
+        sb.uc_open_with_reconnect(url, reconnect_time=5)
+        time.sleep(5)
+        sb.save_screenshot("step1_initial_load.png")
 
-    except Exception as e:
-        print(f"发生错误: {e}")
-        page.get_screenshot(path='screenshots/error.png')
-    finally:
-        page.quit()
+        # 步骤 2: 判断并处理 Cloudflare
+        current_url = sb.get_current_url()
+        if "login" not in current_url:
+            print("🛡️ 检测到人机验证页，尝试破解...")
+            
+            for attempt in range(5):
+                coords = sb.execute_script(_COORDS_JS)
+                if coords:
+                    wi = sb.execute_script(_WININFO_JS)
+                    # GitHub Actions 的虚拟窗口通常没有复杂的边框，但计算逻辑保留以防万一
+                    bar = wi["oh"] - wi["ih"]
+                    ax, ay = coords["cx"] + wi["sx"], coords["cy"] + wi["sy"] + bar
+                    
+                    print(f"🖱️ 第 {attempt+1} 次尝试物理点击: ({ax}, {ay})")
+                    physical_click(ax, ay)
+                    
+                    # 点击后等待 5 秒观察是否跳转
+                    time.sleep(5)
+                    sb.save_screenshot(f"step2_after_click_attempt_{attempt+1}.png")
+                    
+                    if "login" in sb.get_current_url():
+                        print("✅ 验证成功，已进入登录页面！")
+                        break
+                else:
+                    print("⏳ 未找到验证框，重试中...")
+                    time.sleep(3)
+        
+        # 步骤 3: 确认最终状态
+        final_url = sb.get_current_url()
+        sb.save_screenshot("step3_final_state.png")
+        
+        if "login" in final_url:
+            print(f"🎉 任务第一阶段成功：当前 URL 为 {final_url}")
+            # 这里可以继续编写 email 和 password 的填写逻辑
+        else:
+            print("❌ 任务失败：未能跳转到登录页")
+            exit(1)
 
 if __name__ == "__main__":
-    run_login()
+    run_task()
