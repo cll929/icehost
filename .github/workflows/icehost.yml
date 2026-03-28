@@ -353,8 +353,8 @@ jobs:
           ICEHOST_PASSWORD: ${{ secrets.ICEHOST_PASSWORD }}
           PROXY_SOCKS5: ${{ env.PROXY_SOCKS5 }}
         run: |
-          # 使用 xvfb 运行以支持物理点击模拟
-          xvfb-run --auto-servernum python3 icehost_login.py
+          # 使用 1920x1080 分辨率模拟真实环境，这能极大提高点击成功率
+          xvfb-run --server-args="-screen 0 1920x1080x24" python3 icehost_login.py
 
       - name: Upload Artifacts
         if: always()
