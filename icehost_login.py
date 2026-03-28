@@ -10,43 +10,47 @@ PASSWORD = os.environ.get("ICEHOST_PASSWORD")
 PROXY = os.environ.get("PROXY_SOCKS5") 
 
 def handle_turnstile(sb):
-    print("🔍 正在尝试破解 Cloudflare 验证码...")
-    time.sleep(5) # 等待验证码加载
+    print("🔍 启动暴力破解 Cloudflare 流程...")
+    time.sleep(8) # 延长初始等待，确保网页加载全
     
-    # 方案 1：尝试 SeleniumBase 自动点击
+    # 尝试 1：使用 SeleniumBase 专门对抗 CF 的高级点击
     try:
         sb.uc_gui_click_captcha()
-        print("⚡ 已执行底层 GUI 点击模拟")
+        print("⚡ 已尝试底层智能点击")
     except:
         pass
 
-    # 方案 2：强制穿透 Iframe 点击方框
+    # 尝试 2：全页面寻找 iframe 并盲点中心
     if not sb.is_element_visible('input[placeholder="name@skypass.tech"]'):
         try:
-            # 找到验证码所在的 Iframe 并跳进去
-            sb.switch_to_frame("iframe[title*='verification']")
-            print("📥 已进入验证码内部空间")
-            
-            # 点击那个该死的方框 (#challenge-stage 是 Cloudflare 的标准 ID)
-            if sb.is_element_visible('#challenge-stage'):
-                sb.click('#challenge-stage')
-                print("✅ 已点击验证方框！")
-            else:
-                # 如果找不到 ID，就点一下页面中心
-                sb.click_active_element()
-                print("✅ 点击了中心区域")
-            
-            sb.switch_to_default_content() # 别忘了跳出来
+            print("🧪 正在尝试通过坐标盲点...")
+            # 获取页面中心坐标 (基于 1920x1080)
+            # Cloudflare 验证码通常出现在屏幕中间靠下一点的位置
+            sb.click_active_element() # 点击当前焦点
+            sb.mouse_click(960, 500)  # 尝试点击屏幕中心位置
+            print("✅ 已执行坐标盲点 (960, 500)")
         except Exception as e:
-            print(f"ℹ️ Iframe 点击未生效: {e}")
-            sb.switch_to_default_content()
+            print(f"ℹ️ 坐标点击异常: {e}")
+
+    # 尝试 3：强制刷新验证 (针对卡死状态)
+    if not sb.is_element_visible('input[placeholder="name@skypass.tech"]'):
+        print("🔄 尝试模拟按下 TAB 和 SPACE (常用绕过手段)")
+        try:
+            sb.press_keys("body", "\t") # 按下 Tab 键切换焦点
+            time.sleep(1)
+            sb.press_keys("body", " ")  # 按下空格键尝试激活方框
+        except:
+            pass
 
     # 等待结果
-    print("⏳ 等待跳转至登录表单...")
-    for i in range(15):
-        if sb.is_element_visible('input[placeholder="name@skypass.tech"]'):
-            print(f"✨ 验证通过！总耗时约 {i*2+5} 秒")
+    print("⏳ 等待跳转结果...")
+    for i in range(20): # 增加到 40 秒等待
+        curr_url = sb.get_current_url()
+        if "auth/login" in curr_url and sb.is_element_visible('input[placeholder="name@skypass.tech"]'):
+            print(f"✨ 终于进来了！(耗时 {i*2+8}s)")
             return True
+        if i % 5 == 0:
+            sb.save_screenshot(f"debug_step_{i}.png") # 每 10 秒存一张图看看进度
         time.sleep(2)
     return False
 
