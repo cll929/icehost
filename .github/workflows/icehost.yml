@@ -353,14 +353,8 @@ jobs:
           ICEHOST_PASSWORD: ${{ secrets.ICEHOST_PASSWORD }}
           PROXY_SOCKS5: ${{ env.PROXY_SOCKS5 }}
         run: |
-          # 确保安装了最核心的 X11 库
-          sudo apt-get install -y libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-xinput0 libxcb-xfixes0
-          
-          # 启动虚拟显示器
-          Xvfb :99 -screen 0 1920x1080x24 -ac +extension GLX +render -noreset &
-          export DISPLAY=:99
-          sleep 5
-          python3 icehost_login.py
+          # 必须使用 1920x1080 确保验证码方框位置符合脚本预期
+          xvfb-run --server-args="-screen 0 1920x1080x24" python3 icehost_login.py
 
       - name: Upload Artifacts
         if: always()
