@@ -10,48 +10,45 @@ PASSWORD = os.environ.get("ICEHOST_PASSWORD")
 PROXY = os.environ.get("PROXY_SOCKS5") 
 
 def handle_turnstile(sb):
-    print("🔍 启动暴力破解 Cloudflare 流程...")
-    time.sleep(8) # 延长初始等待，确保网页加载全
+    print("🔍 进入高级扫描探测模式...")
+    time.sleep(10) # 确保 iframe 彻底加载完毕
     
-    # 尝试 1：使用 SeleniumBase 专门对抗 CF 的高级点击
-    try:
-        sb.uc_gui_click_captcha()
-        print("⚡ 已尝试底层智能点击")
-    except:
-        pass
+    # 扫描点阵：针对 1920x1080 分辨率下的验证码框位置
+    # 验证码方框通常位于页面正中心区域
+    click_points = [
+        (960, 520), (940, 520), (980, 520), # 横向扫描
+        (960, 500), (960, 540)              # 纵向扫描
+    ]
 
-    # 尝试 2：全页面寻找 iframe 并盲点中心
-    if not sb.is_element_visible('input[placeholder="name@skypass.tech"]'):
-        try:
-            print("🧪 正在尝试通过坐标盲点...")
-            # 获取页面中心坐标 (基于 1920x1080)
-            # Cloudflare 验证码通常出现在屏幕中间靠下一点的位置
-            sb.click_active_element() # 点击当前焦点
-            sb.mouse_click(960, 500)  # 尝试点击屏幕中心位置
-            print("✅ 已执行坐标盲点 (960, 500)")
-        except Exception as e:
-            print(f"ℹ️ 坐标点击异常: {e}")
-
-    # 尝试 3：强制刷新验证 (针对卡死状态)
-    if not sb.is_element_visible('input[placeholder="name@skypass.tech"]'):
-        print("🔄 尝试模拟按下 TAB 和 SPACE (常用绕过手段)")
-        try:
-            sb.press_keys("body", "\t") # 按下 Tab 键切换焦点
-            time.sleep(1)
-            sb.press_keys("body", " ")  # 按下空格键尝试激活方框
-        except:
-            pass
-
-    # 等待结果
-    print("⏳ 等待跳转结果...")
-    for i in range(20): # 增加到 40 秒等待
-        curr_url = sb.get_current_url()
-        if "auth/login" in curr_url and sb.is_element_visible('input[placeholder="name@skypass.tech"]'):
-            print(f"✨ 终于进来了！(耗时 {i*2+8}s)")
+    for idx, (x, y) in enumerate(click_points):
+        if sb.is_element_visible('input[placeholder="name@skypass.tech"]'):
             return True
-        if i % 5 == 0:
-            sb.save_screenshot(f"debug_step_{i}.png") # 每 10 秒存一张图看看进度
+            
+        print(f"🎯 尝试探测点击点 {idx+1}: ({x}, {y})")
+        try:
+            # 使用 SeleniumBase 的物理模拟点击
+            sb.click_at_raw_coords(x, y)
+            time.sleep(3) # 每次点击后多等一会儿看反应
+        except:
+            continue
+            
+        # 实时保存截图，观察点击后复选框是否有“打钩”迹象
+        sb.save_screenshot(f"scan_attempt_{idx}.png")
+        
+        if "auth/login" in sb.get_current_url():
+            print("✨ 检测到 URL 跳转，验证可能已通过！")
+            return True
+
+    # 兜底方案：尝试通过键盘 Tab 键循环聚焦
+    print("⌨️ 坐标点击无果，尝试 Tab 键循环盲点...")
+    for _ in range(5):
+        sb.press_keys("body", "\t")
+        time.sleep(0.5)
+        sb.press_keys("body", " ")
         time.sleep(2)
+        if sb.is_element_visible('input[placeholder="name@skypass.tech"]'):
+            return True
+
     return False
 
 def main():
