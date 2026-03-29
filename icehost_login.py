@@ -10,45 +10,43 @@ PASSWORD = os.environ.get("ICEHOST_PASSWORD")
 PROXY = os.environ.get("PROXY_SOCKS5") 
 
 def handle_turnstile(sb):
-    print("🔍 启动修正后的指纹混淆验证模式...")
+    print("🔍 启动 CDP 底层注入验证模式...")
     
     # 隐藏 WebDriver 特征
     sb.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
     
-    # 延长初始观察时间
     time.sleep(12) 
     
-    # 1. 增加一个“激活页面”的操作：点击页面左上角空白处
+    # 1. 尝试调用 SeleniumBase 内部逻辑
     try:
-        sb.click_at_raw_coords(10, 10)
-        print("🖱️ 已点击空白处激活窗口")
+        print("⚡ 尝试 UC 模式自带验证处理...")
+        sb.uc_gui_handle_captcha()
     except:
         pass
 
-    # 2. 调用高级验证码处理器
-    try:
-        print("⚡ 尝试调用 SeleniumBase 内部逻辑过验证...")
-        # 这一步会自动寻找 Turnstile 并模拟物理点击
-        sb.uc_gui_handle_captcha()
-    except Exception as e:
-        print(f"⚠️ 自动处理尝试完毕 (详情: {e})")
-
-    # 3. 循环监测：如果自动处理没过，尝试一次手动坐标点击
-    print("⏳ 等待验证响应...")
+    # 2. 如果没跳，执行 CDP 强制物理点击
+    print("⏳ 等待并执行强制补点...")
     for i in range(15):
         if sb.is_element_visible('input[placeholder="name@skypass.tech"]'):
             print("🎉 验证成功！")
             return True
         
-        # 中途补救：尝试点击截图里验证码方框的大致位置
+        # 在第 5 步时，发送原始 CDP 鼠标指令
         if i == 5:
-            print("🎯 尝试最后一次坐标补点击...")
-            # 根据 1920x1080 截图估算的方框位置
-            sb.click_at_raw_coords(960, 525) 
+            print("🎯 发送 CDP 强制点击指令 (960, 525)")
+            try:
+                # 这种方式直接操作浏览器内核，不需要 SeleniumBase 的封装函数
+                sb.execute_cdp_cmd('Input.dispatchMouseEvent', {
+                    'type': 'mousePressed', 'x': 960, 'y': 525, 'button': 'left', 'clickCount': 1
+                })
+                sb.execute_cdp_cmd('Input.dispatchMouseEvent', {
+                    'type': 'mouseReleased', 'x': 960, 'y': 525, 'button': 'left', 'clickCount': 1
+                })
+            except Exception as e:
+                print(f"⚠️ CDP 点击异常: {e}")
             
         if i % 3 == 0:
-            sb.save_screenshot(f"final_check_step_{i}.png")
-            
+            sb.save_screenshot(f"cdp_step_{i}.png")
         time.sleep(2)
         
     return False
