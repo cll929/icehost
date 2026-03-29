@@ -12,56 +12,49 @@ PROXY = os.environ.get("PROXY_SOCKS5")
 import random
 
 def handle_turnstile(sb):
-    print("🔍 启动物理坐标 + Iframe 深度探测模式...")
-    time.sleep(12) # 给 Turnstile 充足的时间生成 token
-
-    # 1. 尝试定位 iframe 的实际屏幕位置
+    print("🔍 启动 JavaScript 强行注入验证模式...")
+    time.sleep(10) 
+    
+    # 方案 A: 强制获取 iframe 中心并使用 uc_click (带轨迹模拟)
     try:
-        # 获取 iframe 的位置信息
         iframe_selector = "iframe[src*='turnstile']"
-        if sb.is_element_present(iframe_selector):
-            # 获取元素中心点
-            location = sb.get_element(iframe_selector).location
-            size = sb.get_element(iframe_selector).size
-            
-            # 计算点击中心 (通常复选框在左侧)
-            center_x = location['x'] + 30  # 稍微偏左，通常是方框位置
-            center_y = location['y'] + (size['height'] / 2)
-            
-            print(f"📍 检测到验证码 Iframe 位置: {location}, 尝试点击: ({center_x}, {center_y})")
-            
-            # 在中心点附近进行 3 次带随机偏移的点击
-            for i in range(3):
-                offset_x = center_x + random.randint(-5, 5)
-                offset_y = center_y + random.randint(-5, 5)
-                sb.click_at_raw_coords(offset_x, offset_y)
-                print(f"   👉 尝试偏移点击 {i+1}: ({offset_x}, {offset_y})")
-                time.sleep(3)
-                if sb.is_element_visible('input[placeholder="name@skypass.tech"]'):
-                    return True
+        if sb.is_element_visible(iframe_selector):
+            print("🎯 发现验证码 Iframe，正在模拟真人轨迹点击...")
+            # uc_click 比普通 click 更能避开检测
+            sb.uc_click(iframe_selector)
+            time.sleep(5)
     except Exception as e:
-        print(f"⚠️ 定位 Iframe 失败: {e}")
+        print(f"⚠️ 轨迹点击失败: {e}")
 
-    # 2. 如果坐标点击失效，尝试最原始的“盲人摸象”：Tab 键配合 Enter
-    print("⌨️ 坐标点击失效，尝试键盘序列注入...")
-    try:
-        # 点击页面空白处激活窗口
-        sb.click_at_raw_coords(10, 10)
-        time.sleep(1)
-        # 不同的网站 Tab 次数不同，我们多试几次
-        for t in range(5, 9): 
-            sb.press_keys("body", "\t" * t)
-            time.sleep(0.5)
-            sb.press_keys("body", "\n") # 回车键
-            print(f"   🎹 尝试第 {t} 次 Tab 序列...")
-            time.sleep(4)
-            if sb.is_element_visible('input[placeholder="name@skypass.tech"]'):
-                return True
-    except:
-        pass
+    # 方案 B: JS 注入——强行改变焦点并回车
+    if not sb.is_element_visible('input[placeholder="name@skypass.tech"]'):
+        print("⌨️ 尝试 JS 聚焦注入...")
+        try:
+            # 这段脚本会尝试在所有 iframe 中寻找并点击验证框
+            sb.execute_script("""
+                var iframes = document.querySelectorAll('iframe');
+                for (var i = 0; i < iframes.length; i++) {
+                    if (iframes[i].src.indexOf('turnstile') !== -1) {
+                        iframes[i].focus();
+                        console.log('Focused on Turnstile iframe ' + i);
+                    }
+                }
+            """)
+            time.sleep(1)
+            sb.press_keys("body", "\n") # 在聚焦状态下按回车
+            print("✅ 已执行焦点回车注入")
+        except:
+            pass
 
+    # 验证跳转
+    for i in range(10):
+        if sb.is_element_visible('input[placeholder="name@skypass.tech"]'):
+            print("🎉 注入成功，已进入登录页面！")
+            return True
+        time.sleep(3)
+        sb.save_screenshot(f"retry_step_{i}.png")
+    
     return False
-
 def main():
     # 启动设置
     options = {
