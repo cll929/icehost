@@ -1,98 +1,93 @@
 import os
 import time
+import random
 from seleniumbase import SB
 
 # --- 配置区 ---
 LOGIN_URL = "https://dash.icehost.pl/auth/login"
-RENEW_URL = "https://dash.icehost.pl/clientarea/services" # 续期页面地址
 EMAIL = os.environ.get("ICEHOST_EMAIL")
 PASSWORD = os.environ.get("ICEHOST_PASSWORD")
 PROXY = os.environ.get("PROXY_SOCKS5") 
 
-import random
-
 def handle_turnstile(sb):
-    print("🔍 启动 JavaScript 强行注入验证模式...")
-    time.sleep(10) 
+    print("🔍 启动指纹混淆与高级验证模式...")
     
-    # 方案 A: 强制获取 iframe 中心并使用 uc_click (带轨迹模拟)
+    # 隐藏 WebDriver 特征
+    sb.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+    
+    # 给页面足够的“观察”时间，Cloudflare 对立即点击很敏感
+    time.sleep(15) 
+    
+    # 1. 模拟人类鼠标在页面上随意移动
     try:
-        iframe_selector = "iframe[src*='turnstile']"
-        if sb.is_element_visible(iframe_selector):
-            print("🎯 发现验证码 Iframe，正在模拟真人轨迹点击...")
-            # uc_click 比普通 click 更能避开检测
-            sb.uc_click(iframe_selector)
-            time.sleep(5)
+        print("🖱️ 模拟人类鼠标轨迹...")
+        sb.mouse_move(random.randint(100, 500), random.randint(100, 500))
+        time.sleep(0.5)
+        sb.mouse_move(random.randint(600, 900), random.randint(400, 700))
+    except:
+        pass
+
+    # 2. 调用高级验证码处理器 (SeleniumBase 核心过人招数)
+    try:
+        print("⚡ 尝试自动破解验证码方框...")
+        sb.uc_gui_handle_captcha()
     except Exception as e:
-        print(f"⚠️ 轨迹点击失败: {e}")
+        print(f"⚠️ 高级处理异常（可能已过或需手动）: {e}")
 
-    # 方案 B: JS 注入——强行改变焦点并回车
-    if not sb.is_element_visible('input[placeholder="name@skypass.tech"]'):
-        print("⌨️ 尝试 JS 聚焦注入...")
-        try:
-            # 这段脚本会尝试在所有 iframe 中寻找并点击验证框
-            sb.execute_script("""
-                var iframes = document.querySelectorAll('iframe');
-                for (var i = 0; i < iframes.length; i++) {
-                    if (iframes[i].src.indexOf('turnstile') !== -1) {
-                        iframes[i].focus();
-                        console.log('Focused on Turnstile iframe ' + i);
-                    }
-                }
-            """)
-            time.sleep(1)
-            sb.press_keys("body", "\n") # 在聚焦状态下按回车
-            print("✅ 已执行焦点回车注入")
-        except:
-            pass
-
-    # 验证跳转
-    for i in range(10):
+    # 3. 循环检测跳转结果
+    print("⏳ 等待跳转至登录表单...")
+    for i in range(15):
+        # 检查是否看到了账号输入框
         if sb.is_element_visible('input[placeholder="name@skypass.tech"]'):
-            print("🎉 注入成功，已进入登录页面！")
+            print("🎉 验证成功通过！")
             return True
-        time.sleep(3)
-        sb.save_screenshot(f"retry_step_{i}.png")
-    
+        
+        # 实时存图，我们可以通过 Artifacts 看到点击后的状态
+        if i % 3 == 0:
+            sb.save_screenshot(f"verify_step_{i}.png")
+            
+        time.sleep(2)
+        
     return False
+
 def main():
-    # 启动设置
+    # 强化版初始化参数
     options = {
         "uc": True,
-        "headless": True,
+        "headless": False, # 在 xvfb 模式下，设为 False 反而更真实
+        "no_sandbox": True,
+        "disable_gpu": False,
         "agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     }
     if PROXY:
         options["proxy"] = PROXY
 
     with SB(**options) as sb:
-        print("🚀 正在通过代理访问 IceHost...")
-        sb.uc_open_with_reconnect(LOGIN_URL, 5)
-        sb.save_screenshot("1_open_page.png")
+        print("🚀 正在访问 IceHost 登录页...")
+        try:
+            sb.uc_open_with_reconnect(LOGIN_URL, 5)
+        except:
+            sb.open(LOGIN_URL)
 
-        # 1. 过验证码
+        # 执行验证码绕过
         if not handle_turnstile(sb):
-            print("❌ 验证码识别超时，请检查节点质量")
-            sb.save_screenshot("error_turnstile.png")
+            print("❌ 验证码识别超时，可能需要更换更高质量的节点 IP")
+            sb.save_screenshot("final_error.png")
             return
 
-        # 2. 登录
-        print("📝 正在输入账号密码...")
-        sb.type('input[placeholder="name@skypass.tech"]', EMAIL)
-        sb.type('input[type="password"]', PASSWORD)
-        sb.click('button:contains("Zaloguj się do panelu")')
+        # 填写登录信息
+        print("📝 正在填写登录账号...")
+        sb.type('input[placeholder="name@skypass.tech"]', EMAIL, timeout=10)
+        sb.type('input[type="password"]', PASSWORD, timeout=10)
+        sb.save_screenshot("login_filling.png")
         
-        # 3. 检查登录结果并寻找续期按钮
-        time.sleep(5)
-        sb.save_screenshot("2_after_login.png")
+        # 提交登录
+        sb.click('button[type="submit"]')
         
-        if "auth/login" not in sb.get_current_url():
-            print("🎉 登录成功！正在寻找续期按钮...")
-            # 这里是自动续期的逻辑代码（根据 IceHost 页面结构）
-            # sb.open(RENEW_URL) 
-            # ... 继续添加点击续期的代码 ...
-        else:
-            print("❌ 登录失败，请检查账号密码")
+        # 确认结果
+        time.sleep(8)
+        sb.save_screenshot("login_result.png")
+        print(f"🏁 任务结束，最终位置: {sb.get_current_url()}")
 
 if __name__ == "__main__":
     main()
