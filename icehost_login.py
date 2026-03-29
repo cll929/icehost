@@ -9,45 +9,56 @@ EMAIL = os.environ.get("ICEHOST_EMAIL")
 PASSWORD = os.environ.get("ICEHOST_PASSWORD")
 PROXY = os.environ.get("PROXY_SOCKS5") 
 
+import random
+
 def handle_turnstile(sb):
-    print("🔍 进入高级扫描探测模式...")
-    time.sleep(10) # 确保 iframe 彻底加载完毕
-    
-    # 扫描点阵：针对 1920x1080 分辨率下的验证码框位置
-    # 验证码方框通常位于页面正中心区域
-    click_points = [
-        (960, 520), (940, 520), (980, 520), # 横向扫描
-        (960, 500), (960, 540)              # 纵向扫描
-    ]
+    print("🔍 启动物理坐标 + Iframe 深度探测模式...")
+    time.sleep(12) # 给 Turnstile 充足的时间生成 token
 
-    for idx, (x, y) in enumerate(click_points):
-        if sb.is_element_visible('input[placeholder="name@skypass.tech"]'):
-            return True
+    # 1. 尝试定位 iframe 的实际屏幕位置
+    try:
+        # 获取 iframe 的位置信息
+        iframe_selector = "iframe[src*='turnstile']"
+        if sb.is_element_present(iframe_selector):
+            # 获取元素中心点
+            location = sb.get_element(iframe_selector).location
+            size = sb.get_element(iframe_selector).size
             
-        print(f"🎯 尝试探测点击点 {idx+1}: ({x}, {y})")
-        try:
-            # 使用 SeleniumBase 的物理模拟点击
-            sb.click_at_raw_coords(x, y)
-            time.sleep(3) # 每次点击后多等一会儿看反应
-        except:
-            continue
+            # 计算点击中心 (通常复选框在左侧)
+            center_x = location['x'] + 30  # 稍微偏左，通常是方框位置
+            center_y = location['y'] + (size['height'] / 2)
             
-        # 实时保存截图，观察点击后复选框是否有“打钩”迹象
-        sb.save_screenshot(f"scan_attempt_{idx}.png")
-        
-        if "auth/login" in sb.get_current_url():
-            print("✨ 检测到 URL 跳转，验证可能已通过！")
-            return True
+            print(f"📍 检测到验证码 Iframe 位置: {location}, 尝试点击: ({center_x}, {center_y})")
+            
+            # 在中心点附近进行 3 次带随机偏移的点击
+            for i in range(3):
+                offset_x = center_x + random.randint(-5, 5)
+                offset_y = center_y + random.randint(-5, 5)
+                sb.click_at_raw_coords(offset_x, offset_y)
+                print(f"   👉 尝试偏移点击 {i+1}: ({offset_x}, {offset_y})")
+                time.sleep(3)
+                if sb.is_element_visible('input[placeholder="name@skypass.tech"]'):
+                    return True
+    except Exception as e:
+        print(f"⚠️ 定位 Iframe 失败: {e}")
 
-    # 兜底方案：尝试通过键盘 Tab 键循环聚焦
-    print("⌨️ 坐标点击无果，尝试 Tab 键循环盲点...")
-    for _ in range(5):
-        sb.press_keys("body", "\t")
-        time.sleep(0.5)
-        sb.press_keys("body", " ")
-        time.sleep(2)
-        if sb.is_element_visible('input[placeholder="name@skypass.tech"]'):
-            return True
+    # 2. 如果坐标点击失效，尝试最原始的“盲人摸象”：Tab 键配合 Enter
+    print("⌨️ 坐标点击失效，尝试键盘序列注入...")
+    try:
+        # 点击页面空白处激活窗口
+        sb.click_at_raw_coords(10, 10)
+        time.sleep(1)
+        # 不同的网站 Tab 次数不同，我们多试几次
+        for t in range(5, 9): 
+            sb.press_keys("body", "\t" * t)
+            time.sleep(0.5)
+            sb.press_keys("body", "\n") # 回车键
+            print(f"   🎹 尝试第 {t} 次 Tab 序列...")
+            time.sleep(4)
+            if sb.is_element_visible('input[placeholder="name@skypass.tech"]'):
+                return True
+    except:
+        pass
 
     return False
 
