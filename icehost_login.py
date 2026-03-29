@@ -51,17 +51,19 @@ def handle_turnstile(sb):
     return False
 
 def main():
-    # 强化版初始化参数
+    # 修正后的参数设置
     options = {
         "uc": True,
-        "headless": False, # 在 xvfb 模式下，设为 False 反而更真实
-        "no_sandbox": True,
-        "disable_gpu": False,
+        "headless": False,  # xvfb 环境下设为 False
         "agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     }
+    
+    # 代理设置
     if PROXY:
         options["proxy"] = PROXY
 
+    # 启动浏览器
+    # 注意：SeleniumBase 内部会自动处理 --no-sandbox 等参数，无需手动传入
     with SB(**options) as sb:
         print("🚀 正在访问 IceHost 登录页...")
         try:
